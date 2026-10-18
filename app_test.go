@@ -9,14 +9,18 @@ import (
 
 func TestApp_FilterCompatible(t *testing.T) {
 	l := AppList{
-		App{Requires: runtime.GOOS},
-		App{Requires: runtime.GOOS + ",powerpc"},
-		App{Requires: "powerpc"},
-		App{},
+		"native":   {ID: "native", Requires: runtime.GOOS},
+		"multiple": {ID: "multiple", Requires: runtime.GOOS + ",powerpc"},
+		"other":    {ID: "other", Requires: "powerpc"},
+		"portable": {ID: "portable"},
 	}
 
-	assert.Equal(t, 4, len(l))
-	assert.Equal(t, 3, len(l.filterCompatible()))
+	assert.Len(t, l, 4)
+	assert.Equal(t, AppList{
+		"native":   l["native"],
+		"multiple": l["multiple"],
+		"portable": l["portable"],
+	}, l.filterCompatible())
 }
 
 func TestApp_IsCompatible(t *testing.T) {

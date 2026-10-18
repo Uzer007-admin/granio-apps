@@ -2,27 +2,25 @@ package main
 
 import (
 	"context"
+	"image/color"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"image/color"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/cmd/fyne/commands"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
+	"github.com/Uzer007-admin/granio/v2"
+	"github.com/Uzer007-admin/granio/v2/canvas"
+	"github.com/Uzer007-admin/granio/v2/cmd/granio/commands"
+	"github.com/Uzer007-admin/granio/v2/container"
+	"github.com/Uzer007-admin/granio/v2/dialog"
+	"github.com/Uzer007-admin/granio/v2/layout"
+	"github.com/Uzer007-admin/granio/v2/storage"
+	"github.com/Uzer007-admin/granio/v2/theme"
+	"github.com/Uzer007-admin/granio/v2/widget"
 )
 
 type welcome struct {
@@ -85,7 +83,7 @@ func (w *welcome) loadAppDetail(app App) {
 
 	installedVer := installedVersion(app)
 	installed := installedVer != "" && installedVer == app.Version
-	if installed || app.Source.Package == "fyne.io/apps" {
+	if installed || app.Source.Package == "github.com/Uzer007-admin/granio-apps" {
 		w.install.SetText("Installed")
 		w.install.Disable()
 	} else if installedVer == "" || app.Version == "" {
@@ -102,6 +100,7 @@ func (w *welcome) loadAppDetail(app App) {
 type imageLoader struct {
 	mu     sync.Mutex
 	cancel context.CancelFunc
+	parent context.Context
 }
 
 func (l *imageLoader) load(img *canvas.Image, location string) {
@@ -110,26 +109,38 @@ func (l *imageLoader) load(img *canvas.Image, location string) {
 		l.cancel()
 	}
 	img.Resource = nil
+	img.Image = nil
 	img.Refresh()
 	if location == "" {
 		l.cancel = nil
 		l.mu.Unlock()
 		return
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	parent := l.parent
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
 	l.cancel = cancel
 	l.mu.Unlock()
 
 	go func() {
-		res, err := fyne.CacheResourceFromURLString(location)
+		uri, err := storage.ParseURI(location)
+		var loaded *canvas.Image
+		if err == nil {
+			loaded, err = canvas.LoadImage(ctx, uri)
+		}
 		if ctx.Err() != nil {
 			return // cancelled, don't touch the image
 		}
-		fyne.Do(func() {
+		granio.Do(func() {
+			if ctx.Err() != nil {
+				return
+			}
 			if err != nil {
 				img.Resource = theme.WarningIcon()
 			} else {
-				img.Resource = res
+				img.Resource, img.Image = loaded.Resource, loaded.Image
 			}
 			img.Refresh()
 		})
@@ -138,10 +149,10 @@ func (l *imageLoader) load(img *canvas.Image, location string) {
 
 // appCardLayout positions an icon centered above a label
 type appCardLayout struct {
-	icon, label fyne.CanvasObject
+	icon, label granio.CanvasObject
 }
 
-func (a *appCardLayout) Layout(_ []fyne.CanvasObject, size fyne.Size) {
+func (a *appCardLayout) Layout(_ []granio.CanvasObject, size granio.Size) {
 	iconSize := float32(48)
 	labelH := a.label.MinSize().Height
 	totalH := iconSize + 4 + labelH
@@ -150,25 +161,25 @@ func (a *appCardLayout) Layout(_ []fyne.CanvasObject, size fyne.Size) {
 		topPad = 4
 	}
 
-	a.icon.Resize(fyne.NewSize(iconSize, iconSize))
-	a.icon.Move(fyne.NewPos((size.Width-iconSize)/2, topPad))
+	a.icon.Resize(granio.NewSize(iconSize, iconSize))
+	a.icon.Move(granio.NewPos((size.Width-iconSize)/2, topPad))
 
-	a.label.Resize(fyne.NewSize(size.Width, labelH))
-	a.label.Move(fyne.NewPos(0, topPad+iconSize+4))
+	a.label.Resize(granio.NewSize(size.Width, labelH))
+	a.label.Move(granio.NewPos(0, topPad+iconSize+4))
 }
 
-func (a *appCardLayout) MinSize(_ []fyne.CanvasObject) fyne.Size {
-	return fyne.NewSize(110, 100)
+func (a *appCardLayout) MinSize(_ []granio.CanvasObject) granio.Size {
+	return granio.NewSize(110, 100)
 }
 
-func makeAppCardTemplate() fyne.CanvasObject {
+func makeAppCardTemplate() granio.CanvasObject {
 	icon := &canvas.Image{}
-	icon.SetMinSize(fyne.NewSquareSize(48))
+	icon.SetMinSize(granio.NewSquareSize(48))
 	icon.FillMode = canvas.ImageFillContain
 
 	name := widget.NewLabel("Template")
-	name.Alignment = fyne.TextAlignCenter
-	name.Truncation = fyne.TextTruncateEllipsis
+	name.Alignment = granio.TextAlignCenter
+	name.Truncation = granio.TextTruncateEllipsis
 
 	cardContent := container.New(&appCardLayout{icon: icon, label: name}, icon, name)
 	return container.NewPadded(cardContent)
@@ -177,9 +188,9 @@ func makeAppCardTemplate() fyne.CanvasObject {
 // cardLoaders tracks an imageLoader per grid cell icon so recycled cells cancel prior loads.
 var cardLoaders sync.Map
 
-func updateAppCard(obj fyne.CanvasObject, app App) {
-	padded := obj.(*fyne.Container)
-	card := padded.Objects[0].(*fyne.Container) // the appCardLayout container
+func updateAppCard(ctx context.Context, obj granio.CanvasObject, app App) {
+	padded := obj.(*granio.Container)
+	card := padded.Objects[0].(*granio.Container) // the appCardLayout container
 	icon := card.Objects[0].(*canvas.Image)
 	label := card.Objects[1].(*widget.Label)
 
@@ -188,50 +199,54 @@ func updateAppCard(obj fyne.CanvasObject, app App) {
 	icon.Image = nil
 	icon.Refresh()
 
-	val, _ := cardLoaders.LoadOrStore(icon, &imageLoader{})
+	val, _ := cardLoaders.LoadOrStore(icon, &imageLoader{parent: ctx})
 	loader := val.(*imageLoader)
 	loader.load(icon, app.Icon)
 }
 
 // detailHeaderLayout places the icon to the left with info to its right
 type detailHeaderLayout struct {
-	icon, info fyne.CanvasObject
+	icon, info granio.CanvasObject
 }
 
-func (d *detailHeaderLayout) Layout(_ []fyne.CanvasObject, size fyne.Size) {
+func (d *detailHeaderLayout) Layout(_ []granio.CanvasObject, size granio.Size) {
 	iconSize := float32(80)
-	d.icon.Resize(fyne.NewSize(iconSize, iconSize))
-	d.icon.Move(fyne.NewPos(0, 0))
+	d.icon.Resize(granio.NewSize(iconSize, iconSize))
+	d.icon.Move(granio.NewPos(0, 0))
 
 	infoW := size.Width - iconSize - 12
 	if infoW < 0 {
 		infoW = 0
 	}
-	d.info.Resize(fyne.NewSize(infoW, size.Height))
-	d.info.Move(fyne.NewPos(iconSize+12, 0))
+	d.info.Resize(granio.NewSize(infoW, size.Height))
+	d.info.Move(granio.NewPos(iconSize+12, 0))
 }
 
-func (d *detailHeaderLayout) MinSize(_ []fyne.CanvasObject) fyne.Size {
+func (d *detailHeaderLayout) MinSize(_ []granio.CanvasObject) granio.Size {
 	infoMin := d.info.MinSize()
 	h := infoMin.Height
 	if h < 80 {
 		h = 80
 	}
-	return fyne.NewSize(80+12+infoMin.Width, h)
+	return granio.NewSize(80+12+infoMin.Width, h)
 }
 
-func loadUI(apps AppList, win fyne.Window) fyne.CanvasObject {
+func loadUI(ctx context.Context, apps AppList, win granio.Window) granio.CanvasObject {
 	w := &welcome{}
+	w.iconLoader.parent = ctx
+	for i := range w.screenshotLoader {
+		w.screenshotLoader[i].parent = ctx
+	}
 	w.name = widget.NewLabel("")
 	w.name.TextStyle.Bold = true
 	w.developer = widget.NewLabel("")
 	w.link = widget.NewHyperlink("", nil)
 	w.summary = widget.NewLabel("")
-	w.summary.Wrapping = fyne.TextWrapWord
+	w.summary.Wrapping = granio.TextWrapWord
 	w.version = widget.NewLabel("")
 	w.date = widget.NewLabel("")
 	w.icon = &canvas.Image{}
-	w.icon.SetMinSize(fyne.NewSquareSize(80))
+	w.icon.SetMinSize(granio.NewSquareSize(80))
 	w.icon.FillMode = canvas.ImageFillContain
 	makeScreenshots(w)
 
@@ -274,16 +289,16 @@ func loadUI(apps AppList, win fyne.Window) fyne.CanvasObject {
 	currentCategory := ""
 	filteredIDs := sortedApps(apps, currentCategory, currentSort)
 
-	var detailView, browseView *fyne.Container
+	var detailView, browseView *granio.Container
 
 	appGrid := widget.NewGridWrap(
 		func() int {
 			return len(filteredIDs)
 		},
 		makeAppCardTemplate,
-		func(id widget.GridWrapItemID, obj fyne.CanvasObject) {
+		func(id widget.GridWrapItemID, obj granio.CanvasObject) {
 			if int(id) < len(filteredIDs) {
-				updateAppCard(obj, apps[filteredIDs[id]])
+				updateAppCard(ctx, obj, apps[filteredIDs[id]])
 			}
 		},
 	)
@@ -320,7 +335,7 @@ func loadUI(apps AppList, win fyne.Window) fyne.CanvasObject {
 	}
 
 	// Featured banner
-	featuredBanner := makeFeatured(apps, func(id string) {
+	featuredBanner := makeFeatured(ctx, apps, func(id string) {
 		w.loadAppDetail(apps[id])
 		detailView.Show()
 		browseView.Hide()
@@ -364,6 +379,7 @@ func loadUI(apps AppList, win fyne.Window) fyne.CanvasObject {
 
 	// Wire up install button
 	w.install.OnTapped = func() {
+		target := w.shownApp
 		bar := widget.NewProgressBarInfinite()
 		content := container.NewVBox(widget.NewLabel("Please wait while the app is installed"), bar)
 		prog := dialog.NewCustomWithoutButtons("Downloading...", content, win)
@@ -372,20 +388,25 @@ func loadUI(apps AppList, win fyne.Window) fyne.CanvasObject {
 
 		go func() {
 			get := commands.NewGetter()
-			tmpIcon := downloadIcon(w.shownApp.Icon)
+			tmpIcon := downloadIcon(target.Icon)
+			if tmpIcon != "" {
+				defer os.Remove(tmpIcon)
+			}
 			get.SetIcon(tmpIcon)
-			get.SetAppID(w.shownApp.ID)
-			err := get.Get(w.shownApp.Source.Package)
+			get.SetAppID(target.ID)
+			err := get.Get(target.Source.Package)
 
-			fyne.Do(func() {
+			granio.Do(func() {
 				prog.Hide()
 				bar.Stop()
 				if err != nil {
 					dialog.ShowError(err, win)
 				} else {
 					dialog.ShowInformation("Installed", "App was installed successfully :)", win)
-					markInstalled(w.shownApp)
-					w.loadAppDetail(w.shownApp)
+					markInstalled(target)
+					if w.shownApp.ID == target.ID {
+						w.loadAppDetail(target)
+					}
 				}
 				_ = os.Remove(tmpIcon)
 			})
@@ -396,7 +417,7 @@ func loadUI(apps AppList, win fyne.Window) fyne.CanvasObject {
 	return container.NewStack(browseView, detailView)
 }
 
-func makeSectionHeader(title string) fyne.CanvasObject {
+func makeSectionHeader(title string) granio.CanvasObject {
 	label := canvas.NewText(title, color.NRGBA{R: 100, G: 149, B: 237, A: 255})
 	label.TextSize = 18
 	label.TextStyle.Bold = true
@@ -406,7 +427,7 @@ func makeSectionHeader(title string) fyne.CanvasObject {
 func makeScreenshots(w *welcome) {
 	for i := 0; i < len(w.screenshots); i++ {
 		img := &canvas.Image{}
-		img.SetMinSize(fyne.NewSize(320, 240))
+		img.SetMinSize(granio.NewSize(320, 240))
 		img.FillMode = canvas.ImageFillContain
 
 		w.screenshots[i] = img
@@ -454,21 +475,26 @@ func sortedApps(apps AppList, category, sortMode string) []string {
 }
 
 func downloadIcon(url string) string {
-	req, err := http.Get(url)
+	data, err := downloadData(context.Background(), url, 16<<20)
 	if err != nil {
-		fyne.LogError("Failed to access icon url: "+url, err)
+		granio.LogError("Failed to access icon url: "+url, err)
 		return ""
 	}
-	tmp := filepath.Join(os.TempDir(), "Fyne-Icon.png")
-	data, err := io.ReadAll(req.Body)
+	file, err := os.CreateTemp("", "Fyne-Icon-*.png")
 	if err != nil {
-		fyne.LogError("Failed tread icon data", err)
+		granio.LogError("Failed to create icon file", err)
 		return ""
 	}
 
-	err = os.WriteFile(tmp, data, 0666)
+	tmp := file.Name()
+	_, err = file.Write(data)
+	closeErr := file.Close()
+	if err == nil {
+		err = closeErr
+	}
 	if err != nil {
-		fyne.LogError("Failed to get write icon to: "+tmp, err)
+		_ = os.Remove(tmp)
+		granio.LogError("Failed to get write icon to: "+tmp, err)
 		return ""
 	}
 

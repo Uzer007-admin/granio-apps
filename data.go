@@ -3,12 +3,10 @@ package main
 import (
 	"encoding/json"
 	"io"
-	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
-	"fyne.io/fyne/v2"
+	"github.com/Uzer007-admin/granio/v2"
 )
 
 const keyInstallPrefix = "installed."
@@ -37,7 +35,7 @@ type AppSource struct {
 type AppList map[string]App
 
 func installedVersion(a App) string {
-	return fyne.CurrentApp().Preferences().String(keyInstallPrefix + a.ID)
+	return granio.CurrentApp().Preferences().String(keyInstallPrefix + a.ID)
 }
 
 func markInstalled(a App) {
@@ -45,7 +43,7 @@ func markInstalled(a App) {
 	if ver == "" {
 		ver = "latest"
 	}
-	fyne.CurrentApp().Preferences().SetString(keyInstallPrefix+a.ID, ver)
+	granio.CurrentApp().Preferences().SetString(keyInstallPrefix+a.ID, ver)
 }
 
 func parseAppList(reader io.Reader) (AppList, error) {
@@ -65,18 +63,12 @@ func parseAppList(reader io.Reader) (AppList, error) {
 	return appList.filterCompatible(), nil
 }
 
-func loadAppListFromWeb() (io.ReadCloser, error) {
-	res, err := http.Get("https://apps.fyne.io/api/v1/list.json")
+func loadAppListFromCache() (io.ReadCloser, error) {
+	path, err := catalogCachePath()
 	if err != nil {
 		return nil, err
 	}
-
-	return res.Body, nil
-}
-
-// TODO make actual cache read()
-func loadAppListFromCache() (io.ReadCloser, error) {
-	res, err := os.Open(filepath.Join("testdata", "list.json"))
+	res, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
