@@ -3,7 +3,7 @@ module github.com/Uzer007-admin/granio-apps
 go 1.27.1
 
 require (
-	github.com/Uzer007-admin/granio/v2 v2.8.2-0.20261018000600-86cc66cfefa1
+	github.com/Uzer007-admin/granio/v2 v2.8.2-0.20261018062539-44c3df9361e7
 	github.com/natefinch/atomic v1.0.1
 	github.com/stretchr/testify v1.12.1
 )
@@ -14,11 +14,11 @@ require (
 	github.com/Uzer007-admin/gl v0.0.0-20261017234122-3756695c6558 // indirect
 	github.com/Uzer007-admin/glfw/v3.4/glfw v0.1.0-pre.2.0.20261017234256-57a5925f8166 // indirect
 	github.com/Uzer007-admin/glfw/v3.5/glfw v0.0.0-20261017234256-57a5925f8166 // indirect
-	github.com/Uzer007-admin/granio-gl-js v0.2.1-0.20261017234923-9e3b07127717 // indirect
-	github.com/Uzer007-admin/granio-glfw-js v0.4.1-0.20261017234950-9e15a5515cc9 // indirect
-	github.com/Uzer007-admin/granio-image v0.1.2-0.20261017234830-b1607a79c1eb // indirect
-	github.com/Uzer007-admin/granio-oksvg v0.2.1-0.20261017234852-ddb3049db67c // indirect
-	github.com/Uzer007-admin/granio-systray v1.12.3-0.20261017235015-fd45fbf4dbbd // indirect
+	github.com/Uzer007-admin/granio/deps/gl-js v0.0.0-20261018062049-d56bde3dff7f // indirect
+	github.com/Uzer007-admin/granio/deps/glfw-js v0.0.0-20261018062049-d56bde3dff7f // indirect
+	github.com/Uzer007-admin/granio/deps/image v0.0.0-20261018062049-d56bde3dff7f // indirect
+	github.com/Uzer007-admin/granio/deps/oksvg v0.0.0-20261018062049-d56bde3dff7f // indirect
+	github.com/Uzer007-admin/granio/deps/systray v0.0.0-20261018062049-d56bde3dff7f // indirect
 	github.com/akavel/rsrc v0.10.2 // indirect
 	github.com/anthonynsimon/bild v0.17.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
